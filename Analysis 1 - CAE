@@ -1,0 +1,421 @@
+import os
+import numpy as np
+import matplotlib.pyplot as plt
+import tensorflow as tf
+import scipy.io as sio
+import keras
+from google.colab import drive
+from keras import backend as K
+import seaborn as sns
+from scipy.stats import gaussian_kde
+
+# Montar o Google Drive com autorização automática
+drive.mount('/content/drive', force_remount=True)
+
+
+# Caminho para os diretórios com os arquivos de Massa 0, Massa 1 e Massa 2
+pasta0 = '/content/drive/MyDrive/IC/portico/Massa 0'
+pasta1 = '/content/drive/MyDrive/IC/portico/Massa 1'
+pasta2 = '/content/drive/MyDrive/IC/portico/Massa 2'
+pasta3 = '/content/drive/MyDrive/IC/portico/Massa 3'
+pasta4 = '/content/drive/MyDrive/IC/portico/Massa 4'
+
+def calcular_fft(dados, num_pontos=2000, freq_limite=40):
+    dados = dados[:num_pontos]  # Pegar apenas os primeiros 2000 pontos
+
+    D = len(dados)
+    Fs = 500  # Frequência de amostragem
+    dt = 1 / Fs  # Período de amostragem
+    T = D * dt  # Período total
+
+    df = 1 / T
+    freq = np.arange(0, D) * df
+
+    X_f = np.fft.fft(dados)  # Calcula a FFT
+    X_f = X_f[:D // 2]  # Descarta metade das amostras
+    X_f = np.abs(X_f)
+
+    # Encontre o índice correspondente à frequência limite
+    indice_limite = int(freq_limite / df)
+
+    freq = freq[:indice_limite]  # Mantém apenas as frequências até freq_limite
+    X_f = X_f[:indice_limite]  # Mantém apenas as amplitudes correspondentes
+
+    return freq, X_f
+
+
+learning_rate= 0.019382487167867446
+epochs= 5
+batch_size= 3
+
+
+# Carregar os dados de Massa 0
+massa0 = []
+arquivos_massa0 = os.listdir(pasta0)
+for arquivo in arquivos_massa0[:300]:
+    if arquivo.endswith(".mat"):
+        caminho_arquivo = os.path.join(pasta0, arquivo)
+        arquivo_mat = sio.loadmat(caminho_arquivo)
+        dados = arquivo_mat['X'][:, 0]
+        freq, X_f = calcular_fft(dados)
+        massa0.append(X_f)
+
+massa0 = np.array(massa0)
+
+# Carregar os dados de Massa 1
+massa1 = []
+arquivos_massa1 = os.listdir(pasta1)
+for arquivo in arquivos_massa1[:300]:
+    if arquivo.endswith(".mat"):
+        caminho_arquivo = os.path.join(pasta1, arquivo)
+        arquivo_mat = sio.loadmat(caminho_arquivo)
+        dados = arquivo_mat['X'][:, 0]
+        f, X_f = calcular_fft(dados)  # Calcula a FFT nos dados
+        massa1.append(X_f)
+
+massa1 = np.array(massa1)
+
+# Carregar os dados de Massa 2
+massa2 = []
+arquivos_massa2 = os.listdir(pasta2)
+for arquivo in arquivos_massa2[:300]:
+    if arquivo.endswith(".mat"):
+        caminho_arquivo = os.path.join(pasta2, arquivo)
+        arquivo_mat = sio.loadmat(caminho_arquivo)
+        dados = arquivo_mat['X'][:, 0]
+        f, X_f = calcular_fft(dados)  # Calcula a FFT nos dados
+        massa2.append(X_f)
+
+massa2 = np.array(massa2)
+
+# Carregar os dados de Massa 3
+massa3 = []
+arquivos_massa3 = os.listdir(pasta3)
+for arquivo in arquivos_massa3[:300]:
+    if arquivo.endswith(".mat"):
+        caminho_arquivo = os.path.join(pasta3, arquivo)
+        arquivo_mat = sio.loadmat(caminho_arquivo)
+        dados = arquivo_mat['X'][:, 0]
+        f, X_f = calcular_fft(dados)  # Calcula a FFT nos dados
+        massa3.append(X_f)
+
+massa3 = np.array(massa3)
+
+# Carregar os dados de Massa 4
+massa4 = []
+arquivos_massa4 = os.listdir(pasta4)
+for arquivo in arquivos_massa4[:300]:
+    if arquivo.endswith(".mat"):
+        caminho_arquivo = os.path.join(pasta4, arquivo)
+        arquivo_mat = sio.loadmat(caminho_arquivo)
+        dados = arquivo_mat['X'][:, 0]
+        f, X_f = calcular_fft(dados)  # Calcula a FFT nos dados
+        massa4.append(X_f)
+
+massa4 = np.array(massa4)
+
+
+
+# Calcular a média e o desvio padrão dos dados
+media_massa0 = np.mean(massa0)
+desvio_massa0 = np.std(massa0)
+
+media_massa1 = np.mean(massa1)
+desvio_massa1 = np.std(massa1)
+
+media_massa2 = np.mean(massa2)
+desvio_massa2 = np.std(massa2)
+
+media_massa3 = np.mean(massa3)
+desvio_massa3 = np.std(massa3)
+
+media_massa4 = np.mean(massa4)
+desvio_massa4 = np.std(massa4)
+
+# Normalizar
+massa0 = (massa0 - media_massa0) / desvio_massa0
+massa1 = (massa1 - media_massa1) / desvio_massa1
+massa2 = (massa2 - media_massa2) / desvio_massa2
+massa3 = (massa3 - media_massa3) / desvio_massa3
+massa4 = (massa4 - media_massa4) / desvio_massa4
+
+# Expanda as dimensões dos dados de entrada
+massa0 = np.expand_dims(massa0, axis=-1)
+massa1 = np.expand_dims(massa1, axis=-1)
+massa2 = np.expand_dims(massa2, axis=-1)
+massa3 = np.expand_dims(massa3, axis=-1)
+massa4 = np.expand_dims(massa4, axis=-1)
+
+import tensorflow as tf
+from tensorflow import keras
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Definição dos parâmetros do CAE
+input_shape = massa0.shape[1:]
+latent_dim = 12  # Dimensão do espaço latente
+
+
+# Número de repetições desejadas
+num_repeticoes = 10
+
+# Lista para armazenar os erros residuais de cada repetição
+erros_residuais_por_repeticao = []
+
+# Lista para armazenar os erros residuais totais
+erros_residuais_totais = []
+
+resi_latente_train_acumulado = []
+resi_latente_teste_acumulado = []
+resi_latente_massa1_acumulado = []
+resi_latente_massa2_acumulado = []
+resi_latente_massa3_acumulado = []
+resi_latente_massa4_acumulado = []
+
+
+# Loop para repetições
+for repeticao in range(num_repeticoes):
+    print(f'Repetição {repeticao + 1}')
+    # Dividir massa0 em massa0Treino e massa0Teste
+    np.random.shuffle(massa0)
+    massa0Treino = massa0[:200]
+    massa0Teste = massa0[200:]
+
+    # Definição do modelo CAE
+    inputs = keras.Input(shape=input_shape)
+    x = keras.layers.Conv1D(16, 4, activation='relu', padding='same')(inputs)
+    x = keras.layers.MaxPooling1D(2, padding='same')(x)
+    x = keras.layers.Conv1D(32, 4, activation='relu', padding='same')(x)
+    encoded = keras.layers.MaxPooling1D(2, padding='same')(x)
+
+    # Criação da representação latente e decodificação
+    x = keras.layers.Conv1D(32, 2, activation='relu', padding='same')(encoded)
+    x = keras.layers.UpSampling1D(2)(x)
+    x = keras.layers.Conv1D(16, 2, activation='relu', padding='same')(x)
+    x = keras.layers.UpSampling1D(2)(x)
+    decoded = keras.layers.Conv1D(1, 2, activation='linear', padding='same')(x)
+
+    cae = keras.Model(inputs, decoded, name='conv_autoencoder')
+
+
+    # Compilando o modelo
+    cae.compile(optimizer='adam', loss='mean_squared_error')
+
+
+
+    # Treinamento do AE com os dados de Massa 0
+    cae.fit(massa0Treino, massa0Treino, epochs=epochs, batch_size=batch_size, shuffle=True, verbose=0)
+
+    # Reconstruir os sinais
+    massa0_reconstruidoTreino = cae.predict(massa0Treino)
+    massa0_reconstruidoTeste = cae.predict(massa0Teste)
+    massa1_reconstruido = cae.predict(massa1)
+    massa2_reconstruido = cae.predict(massa2)
+    massa3_reconstruido = cae.predict(massa3)
+    massa4_reconstruido = cae.predict(massa4)
+
+    # Calcular os erros residuais e armazená-los
+    erroTreino = np.mean(np.square(massa0Treino - massa0_reconstruidoTreino), axis=1)
+    erro_massa0Teste = np.mean(np.square(massa0Teste - massa0_reconstruidoTeste), axis=1)
+    erro_massa1 = np.mean(np.square(massa1 - massa1_reconstruido), axis=1)
+    erro_massa2 = np.mean(np.square(massa2 - massa2_reconstruido), axis=1)
+    erro_massa3 = np.mean(np.square(massa3 - massa3_reconstruido), axis=1)
+    erro_massa4 = np.mean(np.square(massa4 - massa4_reconstruido), axis=1)
+
+    erros_residuais = np.concatenate([erroTreino, erro_massa0Teste, erro_massa1, erro_massa2, erro_massa3, erro_massa4])
+    erros_residuais_por_repeticao.append(erros_residuais)
+    encoder = keras.Model(inputs=cae.input, outputs=cae.layers[4].output)
+
+    # Coletar resíduos da camada latente para Massa 0 Treino
+    resi_latente_train = encoder.predict(massa0Treino)
+
+    # Coletar resíduos da camada latente para Massa 0 Teste
+    resi_latente_teste = encoder.predict(massa0Teste)
+
+    # Coletar resíduos da camada latente para Massa 1
+    resi_latente_massa1 = encoder.predict(massa1)
+
+    # Coletar resíduos da camada latente para Massa 2
+    resi_latente_massa2 = encoder.predict(massa2)
+
+    # Coletar resíduos da camada latente para Massa 3
+    resi_latente_massa3 = encoder.predict(massa3)
+
+    # Coletar resíduos da camada latente para Massa 4
+    resi_latente_massa4 = encoder.predict(massa4)
+
+    # Acumular os resíduos da camada latente para Massa 0 Treino
+    resi_latente_train_acumulado.append(resi_latente_train)
+
+    # Acumular os resíduos da camada latente para Massa 0 Teste
+    resi_latente_teste_acumulado.append(resi_latente_teste)
+
+    # Acumular os resíduos da camada latente para Massa 1
+    resi_latente_massa1_acumulado.append(resi_latente_massa1)
+
+    # Acumular os resíduos da camada latente para Massa 2
+    resi_latente_massa2_acumulado.append(resi_latente_massa2)
+
+    # Acumular os resíduos da camada latente para Massa 3
+    resi_latente_massa3_acumulado.append(resi_latente_massa3)
+
+    # Acumular os resíduos da camada latente para Massa 4
+    resi_latente_massa4_acumulado.append(resi_latente_massa4)
+
+
+
+# Calcular a média e o desvio padrão dos resíduos da camada latente para cada classe
+media_resi_latente_massa0 = np.mean(resi_latente_train_acumulado, axis=(0, 1))
+desvio_resi_latente_massa0 = np.std(resi_latente_train_acumulado, axis=(0, 1))
+media_resi_latente_teste_massa0 = np.mean(resi_latente_teste_acumulado, axis=(0, 1))
+desvio_resi_latente_teste_massa0 = np.std(resi_latente_teste_acumulado, axis=(0, 1))
+media_resi_latente_massa1 = np.mean(resi_latente_massa1_acumulado, axis=(0, 1))
+desvio_resi_latente_massa1 = np.std(resi_latente_massa1_acumulado, axis=(0, 1))
+media_resi_latente_massa2 = np.mean(resi_latente_massa2_acumulado, axis=(0, 1))
+desvio_resi_latente_massa2 = np.std(resi_latente_massa2_acumulado, axis=(0, 1))
+media_resi_latente_massa3 = np.mean(resi_latente_massa3_acumulado, axis=(0, 1))
+desvio_resi_latente_massa3 = np.std(resi_latente_massa3_acumulado, axis=(0, 1))
+media_resi_latente_massa4 = np.mean(resi_latente_massa4_acumulado, axis=(0, 1))
+desvio_resi_latente_massa4 = np.std(resi_latente_massa4_acumulado, axis=(0, 1))
+
+
+
+# Converter as listas acumuladas em matrizes NumPy
+resi_latente_train_acumulado = np.array(resi_latente_train_acumulado)
+resi_latente_teste_acumulado = np.array(resi_latente_teste_acumulado)
+resi_latente_massa1_acumulado = np.array(resi_latente_massa1_acumulado)
+resi_latente_massa2_acumulado = np.array(resi_latente_massa2_acumulado)
+resi_latente_massa3_acumulado = np.array(resi_latente_massa3_acumulado)
+resi_latente_massa4_acumulado = np.array(resi_latente_massa4_acumulado)
+
+
+import numpy as np
+from scipy.stats import f
+import matplotlib.pyplot as plt
+
+# Parâmetros
+r = 60  # Subgroups com r observações de x (quantidade de sinais)
+fontsize = 29
+
+# Função para remodelar os dados
+def reshape_features(features):
+    return features.reshape(2000, -1)
+
+# Matriz de características da camada latente para treinamento e teste
+features_train = np.concatenate(resi_latente_train_acumulado, axis=0)
+features_test = np.concatenate(resi_latente_teste_acumulado, axis=0)
+features_massa1 = np.concatenate(resi_latente_massa1_acumulado, axis=0)
+features_massa2 = np.concatenate(resi_latente_massa2_acumulado, axis=0)
+features_massa3 = np.concatenate(resi_latente_massa3_acumulado, axis=0)
+features_massa4 = np.concatenate(resi_latente_massa4_acumulado, axis=0)
+features_train=np.sum(features_train, axis=2)
+features_test=np.sum(features_test, axis=2)
+features_massa1=np.sum(features_massa1, axis=2)
+features_massa2=np.sum(features_massa2, axis=2)
+features_massa3=np.sum(features_massa3, axis=2)
+features_massa4=np.sum(features_massa4, axis=2)
+
+# Número de grupos coletados no estado de referência (treinamento) e teste
+s_train = len(resi_latente_train_acumulado)
+s_test = len(resi_latente_teste_acumulado)
+s_massa1 = len(resi_latente_massa1_acumulado)
+s_massa2 = len(resi_latente_massa2_acumulado)
+s_massa3 = len(resi_latente_massa3_acumulado)
+s_massa4 = len(resi_latente_massa4_acumulado)
+
+# Estimador S1:
+S = np.cov(features_train, rowvar=False)  # Matriz de covariância das características da camada latente
+
+# T-squared para a fase de treinamento
+x_ref_m = np.mean(features_train, axis=0)  # Média dos dados de treinamento
+T_squared_train = []
+
+for i in range(0, len(features_train), r):
+    x = features_train[i:i+r, :]  # "Novos" dados
+    x_m = np.mean(x, axis=0)  # Média dos "novos" dados
+    T_squared_train.append(r * np.dot((x_m - x_ref_m), np.dot(np.linalg.pinv(S), (x_m - x_ref_m))))
+
+# T-squared para a fase de teste
+T_squared_test = []
+
+for i in range(0, len(features_test), r):
+    x = features_test[i:i+r, :]  # Novos dados
+    x_m = np.mean(x, axis=0)  # Média dos novos dados
+    T_squared_test.append(r * np.dot((x_m - x_ref_m), np.dot(np.linalg.pinv(S), (x_m - x_ref_m))))
+
+# T-squared para a Massa 1
+T_squared_massa1 = []
+
+for i in range(0, len(features_massa1), r):
+    x = features_massa1[i:i+r, :]  # Novos dados
+    x_m = np.mean(x, axis=0)  # Média dos novos dados
+    T_squared_massa1.append(r * np.dot((x_m - x_ref_m), np.dot(np.linalg.pinv(S), (x_m - x_ref_m))))
+
+# T-squared para a Massa 2
+T_squared_massa2 = []
+
+for i in range(0, len(features_massa2), r):
+    x = features_massa2[i:i+r, :]  # Novos dados
+    x_m = np.mean(x, axis=0)  # Média dos novos dados
+    T_squared_massa2.append(r * np.dot((x_m - x_ref_m), np.dot(np.linalg.pinv(S), (x_m - x_ref_m))))
+
+# T-squared para a Massa 3
+T_squared_massa3 = []
+
+for i in range(0, len(features_massa3), r):
+    x = features_massa3[i:i+r, :]  # Novos dados
+    x_m = np.mean(x, axis=0)  # Média dos novos dados
+    T_squared_massa3.append(r * np.dot((x_m - x_ref_m), np.dot(np.linalg.pinv(S), (x_m - x_ref_m))))
+
+# T-squared para a Massa 4
+T_squared_massa4 = []
+
+for i in range(0, len(features_massa4), r):
+    x = features_massa4[i:i+r, :]  # Novos dados
+    x_m = np.mean(x, axis=0)  # Média dos novos dados
+    T_squared_massa4.append(r * np.dot((x_m - x_ref_m), np.dot(np.linalg.pinv(S), (x_m - x_ref_m))))
+
+
+from scipy.stats import chi2
+
+# Calcular o percentil 95 dos valores de T_squared_train
+percentile_95 = np.percentile(T_squared_train, 98)
+
+# Definir a UCL como um múltiplo do percentil 95
+UCL = percentile_95
+
+
+# Criar uma lista única de UCL para todas as fases
+UCL_axis = np.full(len(T_squared_train) + len(T_squared_test) + len(T_squared_massa1) + len(T_squared_massa2) + len(T_squared_massa3) + len(T_squared_massa4), UCL)
+
+# Plotar carta de controle T^2 de Hotelling para treinamento, teste, Massa 1, Massa 2, Massa 3 e Massa 4
+plt.figure(figsize=(16, 8))
+plt.plot(np.arange(len(T_squared_train) + len(T_squared_test), len(T_squared_train) + len(T_squared_test) + len(T_squared_massa1)), UCL_axis[len(T_squared_train) + len(T_squared_test):len(T_squared_train) + len(T_squared_test) + len(T_squared_massa1)], 'k', linewidth=3)
+plt.plot(np.arange(len(T_squared_train) + len(T_squared_test) + len(T_squared_massa1), len(T_squared_train) + len(T_squared_test) + len(T_squared_massa1) + len(T_squared_massa2)), UCL_axis[len(T_squared_train) + len(T_squared_test) + len(T_squared_massa1):len(T_squared_train) + len(T_squared_test) + len(T_squared_massa1) + len(T_squared_massa2)], 'k', linewidth=3)
+plt.plot(np.arange(len(T_squared_train) + len(T_squared_test) + len(T_squared_massa1) + len(T_squared_massa2), len(T_squared_train) + len(T_squared_test) + len(T_squared_massa1) + len(T_squared_massa2) + len(T_squared_massa3)), UCL_axis[len(T_squared_train) + len(T_squared_test) + len(T_squared_massa1) + len(T_squared_massa2):len(T_squared_train) + len(T_squared_test) + len(T_squared_massa1) + len(T_squared_massa2) + len(T_squared_massa3)], 'k', linewidth=3)
+plt.plot(np.arange(len(T_squared_train) + len(T_squared_test) + len(T_squared_massa1) + len(T_squared_massa2) + len(T_squared_massa3), len(T_squared_train) + len(T_squared_test) + len(T_squared_massa1) + len(T_squared_massa2) + len(T_squared_massa3) + len(T_squared_massa4)), UCL_axis[len(T_squared_train) + len(T_squared_test) + len(T_squared_massa1) + len(T_squared_massa2) + len(T_squared_massa3):], 'k', linewidth=3)
+
+plt.plot(np.arange(len(T_squared_train)), T_squared_train, 'x', color='#2924be', label='training')
+plt.plot(np.arange(len(T_squared_train), len(T_squared_train) + len(T_squared_test)), T_squared_test, 'h', color='#71bdd7',fillstyle='none',label='validation')
+plt.plot(np.arange(len(T_squared_train) + len(T_squared_test), len(T_squared_train) + len(T_squared_test) + len(T_squared_massa1)), T_squared_massa1, linestyle='None', marker=(8, 2, 0), markersize=5, mew=0.75,color='#9c1732',label='Class 2')
+plt.plot(np.arange(len(T_squared_train) + len(T_squared_test) + len(T_squared_massa1), len(T_squared_train) + len(T_squared_test) + len(T_squared_massa1) + len(T_squared_massa2)), T_squared_massa2, 'D',color='#82b33d', fillstyle='none', markersize=4,mew=0.75,label='Class 3')
+plt.plot(np.arange(len(T_squared_train) + len(T_squared_test) + len(T_squared_massa1) + len(T_squared_massa2), len(T_squared_train) + len(T_squared_test) + len(T_squared_massa1) + len(T_squared_massa2) + len(T_squared_massa3)), T_squared_massa3,'s',fillstyle='none', markersize=4,mew=0.75,color='#d9561e', label='Class 4')
+plt.plot(np.arange(len(T_squared_train) + len(T_squared_test) + len(T_squared_massa1) + len(T_squared_massa2) + len(T_squared_massa3), len(T_squared_train) + len(T_squared_test) + len(T_squared_massa1) + len(T_squared_massa2) + len(T_squared_massa3) + len(T_squared_massa4)), T_squared_massa4, 'v',fillstyle='none', markersize=4,mew=0.75, color='#7d3d8b', label='Class 5')
+plt.plot(np.arange(len(T_squared_train)), UCL_axis[:len(T_squared_train)], 'k', linewidth=3, label='UCL')
+plt.plot(np.arange(len(T_squared_train), len(T_squared_train) + len(T_squared_test)), UCL_axis[len(T_squared_train):len(T_squared_train) + len(T_squared_test)], 'k', linewidth=3)
+
+plt.yscale('log')
+
+plt.xlabel('data subgroups',fontsize = fontsize)
+plt.ylabel('T²',fontsize = fontsize)
+plt.legend(fontsize = 22.5)
+#plt.title('Carta de Controle T^2 de Hotelling - Treinamento, Teste, Massa 1, Massa 2, Massa 3 e Massa 4')
+#plt.grid()
+plt.xlim(0, len(T_squared_train) + len(T_squared_test) + len(T_squared_massa1) + len(T_squared_massa2) + len(T_squared_massa3) + len(T_squared_massa4))
+plt.tick_params(axis='both', labelsize=fontsize-3)
+
+# Adicionar linhas verticais tracejadas a cada 200 pontos
+for i in range(0, 1000, 200):
+    plt.axvline(x=i, linestyle='--', color='gray', linewidth=1,dashes=(6, 6))
+plt.figure(figsize=(16, 8))
+plt.show()
